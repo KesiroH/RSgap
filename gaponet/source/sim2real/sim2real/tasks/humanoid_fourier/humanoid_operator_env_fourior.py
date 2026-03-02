@@ -213,7 +213,7 @@ class HumanoidOperatorEnv(DirectRLEnv):
         self.motion_run_counts = torch.zeros(self._motion_loader.motion_num, dtype=torch.long, device=self.device)
 
     def _pre_physics_step(self, actions: torch.Tensor): 
-        self.actions = actions.clone()    # shape: (num_envs, 10)
+        self.actions = actions.clone()    # shape: (num_envs, 31) for Fourier robot
 
     def _apply_action(self):
         delta_action = torch.zeros((self.num_envs, self.num_dofs), device=self.device)  # shape: (num_envs, num_dofs)
@@ -1032,7 +1032,7 @@ class HumanoidOperatorEnv(DirectRLEnv):
         real_dof_positions = self._motion_loader.dof_positions[self.motion_indices, self.time_indices]   # shape: (num_envs, num_dofs)
         real_dof_velocities = self._motion_loader.dof_velocities[self.motion_indices, self.time_indices] # shape: (num_envs, num_dofs)
         
-        joint_index = self._motion_loader.joint_sequence_index   # shape: (10,)
+        joint_index = self._motion_loader.joint_sequence_index   # shape: (31,) for Fourier robot
 
         # calculate rewards
         position_diff = (robot_dof_positions - real_dof_positions) ** 2     # shape: (num_envs, 10)

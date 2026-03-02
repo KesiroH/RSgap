@@ -49,7 +49,7 @@ class HumanoidOperatorEnvCfg(DirectRLEnvCfg):
 
     # spaces
     observation_space = 0
-    action_space = 1 * 10
+    action_space = 1 * 31  # Fourier robot has 31 joints in joint_sequence
     state_space = 0
 
     early_termination = True
