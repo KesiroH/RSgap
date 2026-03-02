@@ -176,9 +176,9 @@ class HumanoidOperatorEnvCfg(DirectRLEnvCfg):
     add_model_history = True
     model_history_length = 4 # this must match model_history_length in model config
     model_initial_fill_length = 4
-    model_history_dim = 30 # this must match model_history_dim in model config
+    model_history_dim = 93 # joint_pos(31) + joint_vel(31) + joint_target(31); must match model config
 
-    sensor_dim = 20
+    sensor_dim = 62  # joint_pos(31) + joint_vel(31)
     sensor_decimation = 1
 
     add_noise = True
