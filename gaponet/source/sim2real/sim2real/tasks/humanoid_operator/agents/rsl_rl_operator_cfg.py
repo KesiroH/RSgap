@@ -96,9 +96,26 @@ class HumanoidOperatorRunnerCfg(RslRlOnPolicyRunnerCfg):
     eval_after_training = False
 
 @configclass
+class DeepONetActorCriticFourierCfg(DeepONetActorCriticCfg):
+    """Configuration for DeepONet Actor-Critic network for Fourier robot (30 DOFs)"""
+    # Fourier robot has 30 DOFs: adjust dimensions accordingly
+    branch_input_dims: List[int] = [400]  # Input dimensions for different resolutions
+    trunk_input_dim: int = 11  # current_action(10) + payload(1)
+    # critic_input: sensor(400) + current_action(10) + joint_pos(10) + joint_vel(10) + joint_acc(10)
+    #               + real_joint_pos(10) + real_joint_vel(10) + wrist_payload(1) + hand_payload(2) + robot_mass(N_bodies)
+    # NOTE: auto-corrected at runtime by OperatorRunner from actual env observation
+    critic_input_dim: int = 463  # 400+10+5*10+1+2; robot_mass dim added at runtime
+    # model_input: action(10) + dof_pos+dof_vel+target+torque * history_len (30*4)
+    model_input_dim: int = 10 + 30 * 4
+    model_output_dim: int = 400
+    model_history_dim: int = 30
+    model_history_length: int = 4
+
+@configclass
 class HumanoidOperatorVanillaRunnerCfg(HumanoidOperatorRunnerCfg):
     class_name = "OperatorVanillaRunner"
 
+@configclass
 class HumanoidOperatorFourierRunnerCfg(HumanoidOperatorRunnerCfg):
     """Configuration for Humanoid Operator with Fourier features
 

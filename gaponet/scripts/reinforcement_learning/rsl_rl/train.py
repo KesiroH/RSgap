@@ -50,7 +50,9 @@ import torch
 from datetime import datetime
 
 import sim2real.tasks.humanoid_operator
+import sim2real.tasks.humanoid_fourier
 from rsl_rl.runners import OnPolicyRunner
+import sim2real.rsl_rl.runners as sim2real_runners
 
 from isaaclab.envs import (
     DirectMARLEnv,
@@ -126,8 +128,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # wrap around environment for rsl-rl
     env = RslRlVecEnvWrapper(env)
 
-    # create runner from rsl-rl
-    runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
+    # create runner from rsl-rl, dispatching to the correct class via class_name
+    agent_cfg_dict = agent_cfg.to_dict()
+    runner_class_name = agent_cfg_dict.pop("class_name", None)
+    if runner_class_name is not None and hasattr(sim2real_runners, runner_class_name):
+        runner_class = getattr(sim2real_runners, runner_class_name)
+    else:
+        runner_class = OnPolicyRunner
+    runner = runner_class(env, agent_cfg_dict, log_dir=log_dir, device=agent_cfg.device)
     # write git state to logs
     runner.add_git_repo_to_log(__file__)
     # load the checkpoint

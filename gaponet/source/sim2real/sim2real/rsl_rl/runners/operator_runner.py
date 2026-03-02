@@ -44,6 +44,17 @@ class OperatorRunner(OnPolicyRunner):
         if self.policy_cfg['model_input_dim'] != model_obs_dim:
             self.mismatch_model_input_dim = True
         self.policy_cfg['model_input_dim'] = model_obs_dim
+
+        # Auto-correct trunk_input_dim from actual observation
+        actual_trunk_input_dim = num_obs - sum(self.policy_cfg['branch_input_dims'])
+        if self.policy_cfg['trunk_input_dim'] != actual_trunk_input_dim:
+            print(f"[OperatorRunner] trunk_input_dim mismatch: cfg={self.policy_cfg['trunk_input_dim']}, actual={actual_trunk_input_dim}. Auto-correcting.")
+            self.policy_cfg['trunk_input_dim'] = actual_trunk_input_dim
+
+        # Auto-correct critic_input_dim from actual observation
+        if self.policy_cfg['critic_input_dim'] != num_privileged_obs:
+            print(f"[OperatorRunner] critic_input_dim mismatch: cfg={self.policy_cfg['critic_input_dim']}, actual={num_privileged_obs}. Auto-correcting.")
+            self.policy_cfg['critic_input_dim'] = num_privileged_obs
             
         # evaluate the policy class
         policy_class = eval(self.policy_cfg.pop("class_name"))

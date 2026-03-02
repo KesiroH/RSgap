@@ -58,6 +58,9 @@ from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkp
 
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
 import sim2real
+import sim2real.tasks.humanoid_operator
+import sim2real.tasks.humanoid_fourier
+import sim2real.rsl_rl.runners as sim2real_runners
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import get_checkpoint_path, parse_env_cfg
 
@@ -110,7 +113,13 @@ def main():
 
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
     # load previously trained model
-    ppo_runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+    agent_cfg_dict = agent_cfg.to_dict()
+    runner_class_name = agent_cfg_dict.pop("class_name", None)
+    if runner_class_name is not None and hasattr(sim2real_runners, runner_class_name):
+        runner_class = getattr(sim2real_runners, runner_class_name)
+    else:
+        runner_class = OnPolicyRunner
+    ppo_runner = runner_class(env, agent_cfg_dict, log_dir=None, device=agent_cfg.device)
     ppo_runner.load(resume_path)
 
     # obtain the trained policy for inference
