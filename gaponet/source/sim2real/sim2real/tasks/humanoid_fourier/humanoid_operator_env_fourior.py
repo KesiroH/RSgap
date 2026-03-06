@@ -53,7 +53,12 @@ class HumanoidOperatorEnv(DirectRLEnv):
         self.mode = self.cfg.mode
 
         # load motion
-        self._motion_loader = MotionLoaderMotor(motion_file=self.cfg.train_motion_file if self.mode == "train" else self.cfg.test_motion_file, device=self.device, mode=self.mode, robot_name=self.cfg.robot_name)  # type: ignore
+        motion_filter = getattr(self.cfg, 'play_motion_indices', None) if self.mode == "play" else None
+        self._motion_loader = MotionLoaderMotor(
+            motion_file=self.cfg.train_motion_file if self.mode == "train" else self.cfg.test_motion_file,
+            device=self.device, mode=self.mode, robot_name=self.cfg.robot_name,
+            # motion_filter=motion_filter,
+        )  # type: ignore
         self.num_dofs = self._motion_loader.num_dofs
         self.ref_body_index = self.robot.data.body_names.index(self.cfg.reference_body)
 
@@ -90,6 +95,7 @@ class HumanoidOperatorEnv(DirectRLEnv):
 
         # minimum number of runs to aggregate results (default 6)
         self.min_runs = getattr(self.cfg, 'min_runs', 4)
+        self.play_done = False  # set True when all motions reach min_runs in play mode
 
         if self.mode == "play":
             self.add_noise = False
@@ -297,8 +303,9 @@ class HumanoidOperatorEnv(DirectRLEnv):
             print("Motion run counts:", counts)
             # stop when each motion has exactly min_runs (or more, but we'll prevent sampling more)
             if all(self.motion_run_counts[i].item() >= self.min_runs for i in range(self._motion_loader.motion_num)):
+                self.play_done = True
                 self.close()
-                exit()
+                return
 
         # Sample motion indices
         # NOTE: In play mode, we ensure each motion runs exactly min_runs times.
@@ -311,8 +318,9 @@ class HumanoidOperatorEnv(DirectRLEnv):
             available_motions = torch.where(self.motion_run_counts < self.min_runs)[0]
             if len(available_motions) == 0:
                 # All motions have reached min_runs, should have exited above, but just in case
+                self.play_done = True
                 self.close()
-                exit()
+                return
             
             # Sample from available motions
             num_to_sample = len(env_ids)

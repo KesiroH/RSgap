@@ -99,15 +99,15 @@ class HumanoidOperatorRunnerCfg(RslRlOnPolicyRunnerCfg):
 class DeepONetActorCriticFourierCfg(DeepONetActorCriticCfg):
     """Configuration for DeepONet Actor-Critic network for Fourier robot (31 DOFs)"""
     # Fourier robot has 31 DOFs: adjust dimensions accordingly
-    branch_input_dims: List[int] = [1240]  # 20 sensor_positions * 62 (31*2 joint_pos+vel)
+    # branch: 20 sensor_positions * sensor_dim(62) = 1240
+    # sensor_dim = 62 = 31 joints * 2 (pos + vel)
+    branch_input_dims: List[int] = [1240]  # 20 sensor_positions * sensor_dim(62)
     trunk_input_dim: int = 32  # current_action(31) + payload(1)
-    # critic_input: sensor(1240) + current_action(31) + joint_pos(31) + joint_vel(31) + joint_acc(31)
-    #               + real_joint_pos(31) + real_joint_vel(31) + wrist_payload(1) + hand_payload(2) + robot_mass(N_bodies)
-    # NOTE: auto-corrected at runtime by OperatorRunner from actual env observation
+    # critic_input: auto-corrected at runtime by OperatorRunner from actual env observation
     critic_input_dim: int = 463  # placeholder, auto-corrected at runtime
     # model_input: joint_pos(31) + model_history(4*93=372) = 403; auto-corrected at runtime
     model_input_dim: int = 403
-    model_output_dim: int = 1240  # 20 sensor_positions * 62 dims
+    model_output_dim: int = 1240  # 20 sensor_positions * sensor_dim(62)
     model_history_dim: int = 93   # joint_pos(31) + joint_vel(31) + joint_target(31)
     model_history_length: int = 4
 

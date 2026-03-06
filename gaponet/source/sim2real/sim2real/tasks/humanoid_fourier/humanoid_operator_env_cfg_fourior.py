@@ -45,17 +45,16 @@ class HumanoidOperatorEnvCfg(DirectRLEnvCfg):
     episode_length_s = 1.0
     decimation = 4
 
-    mode = "train"   # train 或 play，会在 train.py 或 play.py 中指定
-
+    mode = "train" # "train" or "play"
     # spaces
     observation_space = 0
-    action_space = 1 * 31  # Fourier robot has 31 joints in joint_sequence
+    action_space = 1 * 31
     state_space = 0
 
     early_termination = True
     termination_height = 0.8
 
-    max_payload_mass = 3.0
+    max_payload_mass = 0.0  # real data has 0kg payload, keep simulation consistent
     robot_mass_range = [1.0, 1.0]
 
     train_motion_file: str = MISSING  # type: ignore
@@ -90,7 +89,7 @@ class HumanoidOperatorEnvCfg(DirectRLEnvCfg):
     motion_joint = None
     # motion_file = os.path.join(motion_dir, f"motion_perjoint_all/{ROBOT_DICT[robot_name]['motion_dir']}")
     motion_path = os.path.join(motion_dir, f"motion_amass/{ROBOT_DICT[robot_name]['motion_dir']}")
-    train_motion_file = os.path.join(motion_path, "merged_50Hz_31_10_payload.npz")
+    train_motion_file = os.path.join(motion_path, "fourier_total.npz")
     # train_motion_file = os.path.join(motion_path, "motor_edited_extend_amass_test_merged_50Hz_full_subset_20.npz")
     # test_motion_file = os.path.join(motion_path, "motor_edited_extend_amass_test_merged_50Hz_full_subset_bwd_20.npz")
     # test_motion_file = os.path.join(motion_path, "test_full.npz")
@@ -176,9 +175,9 @@ class HumanoidOperatorEnvCfg(DirectRLEnvCfg):
     add_model_history = True
     model_history_length = 4 # this must match model_history_length in model config
     model_initial_fill_length = 4
-    model_history_dim = 93 # joint_pos(31) + joint_vel(31) + joint_target(31); must match model config
+    model_history_dim = 93 # this must match model_history_dim in model config
 
-    sensor_dim = 62  # joint_pos(31) + joint_vel(31)
+    sensor_dim = 62  # 31 joints * 2 (pos + vel) = 62
     sensor_decimation = 1
 
     add_noise = True
