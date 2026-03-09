@@ -762,6 +762,78 @@ class HumanoidOperatorEnv(DirectRLEnv):
         self.sensor_positions = get_sensor_positions(self.robot.data.joint_names, self.cfg.sensors_positions).to(self.device)
         self.sensor_positions = self.sensor_positions.repeat(self.num_sub_environments, 1)
 
+    def step_sensor(self, resample: bool = True, min_available_length: int = 1):
+        """Step the simulation at all sensor positions and collect real sensor readings.
+
+        Used by OperatorRunner when model_based_sensor=False to fill the replay buffer
+        with (function_coords, sub_env_sensor_data, motion_coords) tuples.
+
+        Returns:
+            function_coords: dict with 'motion_indices' and 'time_indices' for each
+                             sub-environment (shape [num_sub_environments]).
+            sub_env_sensor_data: Tensor [num_sub_environments, num_sensor_positions, sensor_dim]
+                                 containing measured sensor responses.
+            motion_coords: tuple (motion_indices, time_indices), each [num_sub_environments].
+        """
+        if resample:
+            self._sample_sub_environments(min_available_length=min_available_length)
+
+        # Reset all envs to their reference motion states
+        joint_pos = self._motion_loader.dof_positions[self.motion_indices, self.time_indices]
+        joint_vel = self._motion_loader.dof_velocities[self.motion_indices, self.time_indices]
+        self.robot.write_joint_state_to_sim(joint_pos, joint_vel)
+
+        # Apply sensor position perturbations across the 20-env sub-groups
+        if self.cfg.delta_sensor_position:
+            self.robot.set_joint_position_target(self.sensor_positions + self.robot.data.joint_pos)
+        else:
+            self.robot.set_joint_position_target(self.sensor_positions.clone())
+
+        # Record pre-step state, step sim, record post-step state
+        self._pre_set_sensor_data()
+        for _ in range(self.cfg.sensor_decimation):
+            self._raw_step_simulator()
+        self._set_sensor_data()
+
+        # Return per-sub-env data (take first env of each 20-env group)
+        sub_indices = self.motion_indices[::self.num_sensor_positions].clone()
+        sub_time    = self.time_indices[::self.num_sensor_positions].clone()
+        function_coords = {
+            'motion_indices': sub_indices,
+            'time_indices':   sub_time,
+        }
+        motion_coords = (sub_indices, sub_time)
+        return function_coords, self.sub_env_sensor_data.clone(), motion_coords
+
+    def create_function(self, function_coords, sensor_data: torch.Tensor,
+                        motion_coords: tuple):
+        """Set up all environments from replay-buffer samples.
+
+        After sample_functions_and_sensors() concatenates num_sensor_positions (20)
+        replay-buffer items, every argument has a leading dimension of num_envs (4080).
+        Each env gets its own independent function (motion + sensor reading).
+
+        Args:
+            function_coords: dict (not used directly; motion_coords carries the indices).
+            sensor_data: Tensor [num_envs, num_sensor_positions, sensor_dim].
+            motion_coords: tuple (motion_indices, time_indices), each [num_envs].
+        """
+        motion_indices, time_indices = motion_coords
+        self.motion_indices[:] = motion_indices
+        self.time_indices[:] = time_indices
+
+        # Reset envs to reference joint states
+        joint_pos = self._motion_loader.dof_positions[self.motion_indices, self.time_indices]
+        joint_vel = self._motion_loader.dof_velocities[self.motion_indices, self.time_indices]
+        self.robot.write_joint_state_to_sim(joint_pos, joint_vel)
+
+        # Inject pre-computed sensor readings
+        self.sensor_data[:] = sensor_data
+
+        # Clear per-episode buffers so history doesn't bleed across functions
+        self.model_history[:] = 0.
+        self.last_delta_action[:] = 0.
+
     def _sample_sub_environments(self, min_available_length: int = 1):
         motion_indices, time_indices = self._motion_loader.sample_indices(self.num_sub_environments, randomize_start=True, min_available_length=min_available_length)
         self.motion_indices[:] = motion_indices.repeat_interleave(self.num_sensor_positions, dim=0)
@@ -906,10 +978,28 @@ class HumanoidOperatorEnv(DirectRLEnv):
         self.sample_all_environments(env_ids=self._ALL_INDICES[dones])
 
         self.last_delta_action[:] = self.delta_action
-        return None, rewards, dones, {'episode': {
-            'joint_pos_diff': torch.abs((self._motion_loader.dof_positions[self.motion_indices, self.time_indices] - self.robot.data.joint_pos)[:, self._motion_loader.joint_sequence_index]) * (360 / 6.28),
-            'joint_vel_diff': torch.abs((self._motion_loader.dof_velocities[self.motion_indices, self.time_indices] - self.robot.data.joint_vel)[:, self._motion_loader.joint_sequence_index]) * (360 / 6.28),
-        }}
+
+        joint_pos_diff = torch.abs(
+            (self._motion_loader.dof_positions[self.motion_indices, self.time_indices] - self.robot.data.joint_pos)
+            [:, self._motion_loader.joint_sequence_index]
+        ) * (360 / 6.28)  # (num_envs, 31), unit: deg
+        joint_vel_diff = torch.abs(
+            (self._motion_loader.dof_velocities[self.motion_indices, self.time_indices] - self.robot.data.joint_vel)
+            [:, self._motion_loader.joint_sequence_index]
+        ) * (360 / 6.28)  # (num_envs, 31), unit: deg/s
+
+        episode_info = {
+            'reward/total': rewards.mean(),                          # scalar: mean reward across all envs
+            'joint_error/mean_pos_err_deg': joint_pos_diff.mean(),  # scalar: global mean position error
+            'joint_error/mean_vel_err_deg': joint_vel_diff.mean(),  # scalar: global mean velocity error
+            'joint_pos_diff': joint_pos_diff,  # kept for backward compat (2D tensor, runner averages it)
+            'joint_vel_diff': joint_vel_diff,
+        }
+        # Per-joint position error (mean across envs) → logged as joint_pos_err/<joint_name> in wandb
+        for i, name in enumerate(self._motion_loader.joint_sequence):
+            episode_info[f'joint_pos_err/{name}'] = joint_pos_diff[:, i].mean()
+
+        return None, rewards, dones, {'episode': episode_info}
 
 
     def compute_model_observation(self, add_noise: bool = False) -> torch.Tensor:

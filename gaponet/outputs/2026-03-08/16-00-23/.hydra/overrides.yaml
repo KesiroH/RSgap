@@ -1,0 +1,2 @@
+- env.mode=train
+- agent.model_based_sensor=false

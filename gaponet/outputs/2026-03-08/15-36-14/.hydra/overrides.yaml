@@ -1,0 +1,3 @@
+- env.mode=train
+- agent.model_based_sensor=false
+- agent.num_steps_function=32

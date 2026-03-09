@@ -118,8 +118,23 @@ class OperatorRunner(OnPolicyRunner):
         if self.model_based_sensor:
             assert self.num_steps_per_env % self.num_steps_function == 0
         else:
-            assert self.num_steps_function == self.num_steps_per_env
+            if self.num_steps_function != self.num_steps_per_env:
+                print(
+                    f"[OperatorRunner] model_based_sensor=False: auto-correcting "
+                    f"num_steps_function {self.num_steps_function} → {self.num_steps_per_env}"
+                )
+                self.num_steps_function = self.num_steps_per_env
         self.model_learning_interval = self.cfg["model_learning_interval"]
+
+        # Detect whether the env implements the step_sensor / create_function interface
+        self.supports_function_sampling = (
+            hasattr(self.env, "step_sensor") and hasattr(self.env, "create_function")
+        )
+        if not self.model_based_sensor and not self.supports_function_sampling:
+            print(
+                "[OperatorRunner] model_based_sensor=False but env has no step_sensor/"
+                "create_function. Falling back to direct sensor update from simulator state."
+            )
 
         self.randomize_dynamics = self.cfg["randomize_dynamics"]
         self.direct_sample_envs = self.cfg["direct_sample_envs"]
@@ -290,7 +305,7 @@ class OperatorRunner(OnPolicyRunner):
         num_sensor_positions = self.env.num_sensor_positions
         num_steps_per_function = self.num_steps_per_env // self.num_steps_function
 
-        if not self.model_based_sensor:
+        if not self.model_based_sensor and self.supports_function_sampling:
             with torch.inference_mode():
                 while len(replay_buffer) < num_sensor_positions:
                     for _ in range(num_sensor_positions):
@@ -306,7 +321,8 @@ class OperatorRunner(OnPolicyRunner):
                 self.sensor_model.eval()
 
             # Rollout
-            if not self.model_based_sensor or not self.direct_sample_envs:
+            if (not self.model_based_sensor and self.supports_function_sampling) or \
+               (self.model_based_sensor and not self.direct_sample_envs):
                 with torch.inference_mode():
                     for _ in range(num_sensor_positions):
                         # sample sensors
@@ -321,7 +337,13 @@ class OperatorRunner(OnPolicyRunner):
                     if self.randomize_dynamics and self.model_based_sensor:
                         self.env.sample_all_dynamics(sample_payload=not self.full_trajectory_sampling)
 
-                    if not self.model_based_sensor or not self.direct_sample_envs:
+                    if not self.model_based_sensor:
+                        if self.supports_function_sampling:
+                            function_coords, sensor_data, motion_coords = self.sample_functions_and_sensors(replay_buffer)
+                            self.env.create_function(function_coords, sensor_data, motion_coords)
+                        elif not self.full_trajectory_sampling:
+                            self.env.sample_all_environments(min_available_length=num_steps_per_function)
+                    elif not self.direct_sample_envs:
                         function_coords, sensor_data, motion_coords = self.sample_functions_and_sensors(replay_buffer)
                         self.env.create_function(function_coords, sensor_data, motion_coords)
                     elif not self.full_trajectory_sampling:
@@ -342,7 +364,7 @@ class OperatorRunner(OnPolicyRunner):
                         actions = self.alg.act(obs, privileged_obs)
                         # Step the environment
                         obs, rewards, dones, infos = self.env.step_operator(actions.to(self.env.device), # type: ignore
-                                                                            motion_coords if not self.model_based_sensor else None) 
+                                                                            motion_coords if (not self.model_based_sensor and self.supports_function_sampling) else None) 
                         if self.model_based_sensor:
                             sensor_data = self.sensor_model(self.env.compute_model_observation().to(self.device)).reshape(self.env.num_envs, self.env.num_sensor_positions, -1)
                             self.env.set_sensor_data(sensor_data.to(self.env.device))
